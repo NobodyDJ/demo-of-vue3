@@ -54,5 +54,6 @@ const click1 = () => {
 btn.addEventListener('click', click1)
 
 setTimeout(() => {
+    // 这段代码的effect将不再执行
     obj.notExist = 'no exist';
 }, 1000)
