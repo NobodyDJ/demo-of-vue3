@@ -4,39 +4,50 @@ const bucket = new WeakMap();// 这里采用了weakMap弱键值对，体现在�
 const effectStack = []; //将外层的副作用函数保存起来
 let activeEffect;
 
-const data = {
-    foo: 1,
-};
+const data = {};
+const proto = { bar: 1 };
+const child = reactive(data);
+const parent = reactive(proto);
+child.raw = data;
+parent.raw = proto;
+Object.setPrototypeOf(child, parent);
 const ITERATE_KEY = Symbol();
 
-const obj = new Proxy(data, {
-    get(target, key, receiver) {
-        // 将副作用函数加入
-        track(target, key)
-        return Reflect.get(target, key, receiver);
-    },
-    set(target, key, newVal, receiver) {
-        const type = Object.prototype.hasOwnProperty.call(target, key) ? "SET" : "ADD"
-        const res = Reflect.set(target, key, newVal, receiver);
-        // 合理地触发响应当设置的值与之前的相同，就没必要再次触发副作用函数
-        // 后者是用来兼容NAN类型，NAN !== NAN
-        if(oldVal !== newVal && (oldVal === oldVal || newVal === newVal))
-        trigger(target, key, type);
-        return res
-    },
-    ownKeys(target) {
-        track(target, ITERATE_KEY);
-        return Reflect.ownKeys(target);
-    },
-    deleteProperty(target, key) {
-        const hadKey = Object.prototype.hasOwnProperty.call(target, key);
-        const res = Reflect.deleteProperty(target, key);
-        if (res && hadKey) {
-            trigger(target, key, 'DELETE')
+function reactive(obj) {
+    return new Proxy(obj, {
+        get(target, key, receiver) {
+            // 将副作用函数加入
+            track(target, key)
+            return Reflect.get(target, key, receiver);
+        },
+        set(target, key, newVal, receiver) {
+            const oldVal = target[key]
+            const type = Object.prototype.hasOwnProperty.call(target, key) ? "SET" : "ADD"
+            const res = Reflect.set(target, key, newVal, receiver);
+            // 合理地触发响应当设置的值与之前的相同，就没必要再次触发副作用函数
+            // 后者是用来兼容NAN类型，NAN !== NAN
+            // 如果当前被代理的属性，是通过原型链来找找的，不需要触发无意义的副作用函数
+            if (target === reactive.raw) {
+                if (oldVal !== newVal && (oldVal === oldVal || newVal === newVal)) {
+                    trigger(target, key, type);
+                }
+            }
+            return res
+        },
+        ownKeys(target) {
+            track(target, ITERATE_KEY);
+            return Reflect.ownKeys(target);
+        },
+        deleteProperty(target, key) {
+            const hadKey = Object.prototype.hasOwnProperty.call(target, key);
+            const res = Reflect.deleteProperty(target, key);
+            if (res && hadKey) {
+                trigger(target, key, 'DELETE')
+            }
+            return res
         }
-        return res
-    }
-})
+    })
+}
 
 function track(target, key) {
     if (!activeEffect) return target[key];
@@ -75,6 +86,7 @@ function trigger(target, key, type) {
             }
         })
     }
+    // 
     effectToRun.forEach((effectFn) => {
         if (effectFn.options.scheduler) {
             effectFn.options.scheduler(effectFn)
@@ -113,11 +125,7 @@ function effect(fn, options = {}) {
 }
 
 effect(() => {
-    for (const key in obj) {
-        console.log(key)
-    }
+    console.log(child.bar);
 })
 
-obj.bar = 2;
-obj.bar = 3;
-delete obj.bar
+child.bar = 2;
